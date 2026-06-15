@@ -293,7 +293,7 @@
       <div class="card" style="margin-bottom:16px;">
         <div class="card-header">
           <div class="card-title">사유별 월별 추이</div>
-          <select id="reason-month-select" onchange="renderReasonMonthly()" style="font-size:12px;font-weight:600;color:var(--accent);border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;">
+          <select id="reason-month-select" onchange="renderReasonMonthly()" style="font-size:12px;font-weight:600;color:#111827;border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;">
           </select>
         </div>
         <div class="chart-wrap h240"><canvas id="chart-reason-monthly"></canvas></div>
@@ -770,34 +770,65 @@ function renderReasonMonthly() {
   if (!sel || !currentFY) return;
   const selectedReason = sel.value;
   const d = COMPUTED[currentFY];
-
-  // 월별 해당 사유 건수 집계 (MONTH_ORDER 순서로)
-  const monthData = MONTH_ORDER.map(mo => {
-    const detail = d._monthly_detail[mo];
-    return detail ? (detail.reason[selectedReason] || 0) : 0;
-  });
+  const prevFY = String(Number(currentFY) - 1);
+  const prev = COMPUTED[prevFY] || null;
 
   // 색상: 해당 사유의 순위에 맞는 PALETTE 색
   const reasonIdx = d.reason.findIndex(x => x.사유 === selectedReason);
   const color = PALETTE[reasonIdx >= 0 ? reasonIdx % PALETTE.length : 0];
+
+  // 당해 월별 데이터
+  const curData = MONTH_ORDER.map(mo => {
+    const detail = d._monthly_detail[mo];
+    return detail ? (detail.reason[selectedReason] || 0) : 0;
+  });
+
+  // 전년 월별 데이터
+  const prevData = MONTH_ORDER.map(mo => {
+    if (!prev) return 0;
+    const detail = prev._monthly_detail[mo];
+    return detail ? (detail.reason[selectedReason] || 0) : 0;
+  });
+
+  const datasets = [
+    {
+      label: `FY${currentFY}`,
+      data: curData,
+      backgroundColor: color + 'CC',
+      borderColor: color,
+      borderWidth: 1,
+      borderRadius: 4,
+    }
+  ];
+
+  if (prev) {
+    datasets.push({
+      label: `FY${prevFY} (전년)`,
+      data: prevData,
+      backgroundColor: '#9CA3AF44',
+      borderColor: '#9CA3AF',
+      borderWidth: 1,
+      borderRadius: 4,
+    });
+  }
 
   destroyChart('reason-monthly');
   charts['reason-monthly'] = new Chart(document.getElementById('chart-reason-monthly').getContext('2d'), {
     type: 'bar',
     data: {
       labels: MONTH_ORDER.map(mo => MONTH_LABEL[mo]),
-      datasets: [{
-        label: selectedReason,
-        data: monthData,
-        backgroundColor: color + 'CC',
-        borderColor: color,
-        borderWidth: 1,
-        borderRadius: 4,
-      }]
+      datasets
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      interaction: { mode: 'index' },
+      plugins: {
+        legend: {
+          display: !!prev,
+          position: 'top',
+          labels: { font: { family: 'Noto Sans KR', size: 11 }, boxWidth: 12 }
+        }
+      },
       scales: {
         y: {
           grid: { color: '#F0F2F5' },
