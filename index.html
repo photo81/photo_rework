@@ -654,7 +654,7 @@ function renderOverview(fy) {
     const el = document.getElementById(id);
     if (!el) return;
     const { text, cls } = yoyBadge(cur, prevVal, isLowerBetter);
-    el.textContent = text ? `전년比 ${text}` : prev ? '전년 데이터 없음' : '';
+    el.textContent = text ? `전년대비 ${text}` : prev ? '전년 데이터 없음' : '';
     el.className = `kpi-yoy ${cls}`;
   }
 
