@@ -517,7 +517,7 @@ function finalizeFY(fy) {
     주문:   (d._monthly[mo] || {주문:0}).주문,
   }));
   // 사유 내림차순 TOP10
-  d.reason = Object.entries(d._reason).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([사유,건수])=>({사유,건수}));
+  d.reason = Object.entries(d._reason).sort((a,b)=>b[1]-a[1]).map(([사유,건수])=>({사유,건수}));
   // 부서 내림차순
   d.dept = Object.entries(d._dept).sort((a,b)=>b[1]-a[1]).map(([부서,건수])=>({부서,건수}));
   // 상품 내림차순
@@ -727,7 +727,7 @@ function renderOverview(fy) {
         <div class="bar-track"><div class="bar-fill" style="width:${(r.건수/maxVal*100).toFixed(1)}%;background:${PALETTE[i%PALETTE.length]}"></div></div>
       </div>`).join('');
   };
-  if (d.reason.length) renderBarList('reason-bar-list', d.reason, '사유', d.reason[0].건수);
+  if (d.reason.length) renderBarList('reason-bar-list', d.reason.slice(0,10), '사유', d.reason[0].건수);
   if (d.partner.length) renderBarList('partner-bar-list', d.partner, '제휴사', d.partner[0].건수);
 }
 
