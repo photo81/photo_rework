@@ -339,7 +339,7 @@
         </div>
         <div class="chart-wrap h240"><canvas id="chart-product-monthly"></canvas></div>
         <div style="margin-top:10px;font-size:11.5px;color:var(--text-muted);text-align:right;">
-          💡 상품과 재작업 유형을 선택하면 월별 추이를 조회할 수 있습니다. 유형 미선택 시 전체 집계
+          💡 상품과 재작업 유형을 선택하면 월별 추이를 조회할 수 있습니다.
         </div>
       </div>
       <div class="card">
@@ -367,6 +367,19 @@
         <div class="card">
           <div class="card-header"><div class="card-title">부서별 비중</div></div>
           <div class="chart-wrap h300"><canvas id="chart-dept-pie"></canvas></div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <div class="card-title">부서별 월별 추이</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="dept-month-dept-select" onchange="renderDeptMonthly()" style="font-size:12px;font-weight:600;color:#111827;border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;"></select>
+            <select id="dept-month-reason-select" onchange="renderDeptMonthly()" style="font-size:12px;font-weight:600;color:#111827;border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;"></select>
+          </div>
+        </div>
+        <div class="chart-wrap h240"><canvas id="chart-dept-monthly"></canvas></div>
+        <div style="margin-top:10px;font-size:11.5px;color:var(--text-muted);text-align:right;">
+          💡 부서와 재작업 유형을 선택하면 월별 추이를 조회할 수 있습니다.
         </div>
       </div>
       <div class="card">
@@ -476,7 +489,14 @@ function parseWorkbook(wb) {
 
     // 주관부서
     const dept = (r[C.dept] || '').trim();
-    if (dept) d._dept[dept] = (d._dept[dept] || 0) + 1;
+    if (dept) {
+      d._dept[dept] = (d._dept[dept] || 0) + 1;
+      // 부서별 월별 사유 집계
+      if (!d._dept_monthly[dept]) d._dept_monthly[dept] = {};
+      if (!d._dept_monthly[dept][mo]) d._dept_monthly[dept][mo] = { '__전체': 0 };
+      d._dept_monthly[dept][mo]['__전체']++;
+      if (reason) d._dept_monthly[dept][mo][reason] = (d._dept_monthly[dept][mo][reason] || 0) + 1;
+    }
 
     // 상품구분
     const prod = (r[C.product] || '').trim();
@@ -539,7 +559,7 @@ function initFY(fy) {
     total_rework: 0, total_orders: 0, total_cost: 0,
     _monthly: {}, _reason: {}, _reason_detail: {}, _dept: {}, _product: {}, _partner: {},
     monthly: [], reason: [], dept: [], product: [], partner: [],
-    _monthly_detail: {}, _product_monthly: {}  // _product_monthly[상품][월][사유] = 건수
+    _monthly_detail: {}, _product_monthly: {}, _dept_monthly: {}  // _dept_monthly[부서][월][사유] = 건수
   };
 }
 
@@ -1074,10 +1094,105 @@ function renderDept(fy) {
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{family:'Noto Sans KR',size:11},boxWidth:12,padding:8}}}}
   });
 
+  // 부서 셀렉터 초기화
+  const deptSel = document.getElementById('dept-month-dept-select');
+  deptSel.innerHTML = d.dept.map(x => `<option value="${x.부서}">${x.부서}</option>`).join('');
+
+  // 재작업유형 셀렉터 초기화
+  const deptReasonSel = document.getElementById('dept-month-reason-select');
+  const firstDept = d.dept[0]?.부서 || '';
+  const deptReasons = firstDept ? Object.keys(
+    Object.values(d._dept_monthly[firstDept] || {}).reduce((acc, moData) => {
+      Object.keys(moData).forEach(k => { if (k !== '__전체') acc[k] = 1; });
+      return acc;
+    }, {})
+  ) : [];
+  deptReasonSel.innerHTML = `<option value="__전체">전체</option>` +
+    deptReasons.map(r => `<option value="${r}">${r}</option>`).join('');
+
+  renderDeptMonthly();
+
   document.getElementById('dept-table-body').innerHTML = d.dept.map((x,i) => `
     <tr><td><span class="rank-num ${i<3?'top':''}">${i+1}</span></td>
     <td><span class="dept-dot" style="background:${deptColors[i]}"></span>${x.부서}</td>
     <td class="num-cell">${fmt(x.건수)}</td><td class="pct-cell">${pct(x.건수,d.total_rework)}</td></tr>`).join('');
+}
+
+// ── 부서별 월별 추이 차트 ──
+function renderDeptMonthly() {
+  const deptSel   = document.getElementById('dept-month-dept-select');
+  const reasonSel = document.getElementById('dept-month-reason-select');
+  if (!deptSel || !currentFY) return;
+
+  const selectedDept   = deptSel.value;
+  const selectedReason = reasonSel.value;
+  const d      = COMPUTED[currentFY];
+  const prevFY = String(Number(currentFY) - 1);
+  const prev   = COMPUTED[prevFY] || null;
+
+  // 부서 선택 변경 시 해당 부서의 사유 목록으로 유형 셀렉터 갱신
+  const deptMonthly = d._dept_monthly[selectedDept] || {};
+  const allReasons = Object.keys(
+    Object.values(deptMonthly).reduce((acc, moData) => {
+      Object.keys(moData).forEach(k => { if (k !== '__전체') acc[k] = 1; });
+      return acc;
+    }, {})
+  );
+  const curReasonVal = reasonSel.value;
+  reasonSel.innerHTML = `<option value="__전체">전체</option>` +
+    allReasons.map(r => `<option value="${r}" ${r === curReasonVal ? 'selected' : ''}>${r}</option>`).join('');
+
+  // 색상: 부서 색상 맵 기준
+  const color = DEPT_COLORS[selectedDept] || '#9CA3AF';
+
+  // 월별 데이터 추출
+  const getMonthData = (dmData) => MONTH_ORDER.map(mo => {
+    const moData = (dmData || {})[mo] || {};
+    return selectedReason === '__전체' ? (moData['__전체'] || 0) : (moData[selectedReason] || 0);
+  });
+
+  const curData  = getMonthData(d._dept_monthly[selectedDept]);
+  const prevData = prev ? getMonthData(prev._dept_monthly[selectedDept]) : [];
+
+  const datasets = [{
+    label: `FY${currentFY}`,
+    data: curData,
+    backgroundColor: color + 'CC',
+    borderColor: color,
+    borderWidth: 1,
+    borderRadius: 4,
+  }];
+  if (prev) {
+    datasets.push({
+      label: `FY${prevFY} (전년)`,
+      data: prevData,
+      backgroundColor: '#9CA3AF44',
+      borderColor: '#9CA3AF',
+      borderWidth: 1,
+      borderRadius: 4,
+    });
+  }
+
+  destroyChart('dept-monthly');
+  charts['dept-monthly'] = new Chart(document.getElementById('chart-dept-monthly').getContext('2d'), {
+    type: 'bar',
+    data: { labels: MONTH_ORDER.map(mo => MONTH_LABEL[mo]), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index' },
+      plugins: {
+        legend: {
+          display: !!prev,
+          position: 'top',
+          labels: { font: { family: 'Noto Sans KR', size: 11 }, boxWidth: 12 }
+        }
+      },
+      scales: {
+        y: { grid: { color: '#F0F2F5' }, ticks: { stepSize: 1, precision: 0 }, beginAtZero: true },
+        x: { grid: { display: false } }
+      }
+    }
+  });
 }
 
 // ── 시작 ──
