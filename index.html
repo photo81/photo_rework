@@ -1143,7 +1143,22 @@ function renderDept(fy) {
   charts['dept-pie'] = new Chart(document.getElementById('chart-dept-pie').getContext('2d'), {
     type:'doughnut',
     data:{labels:d.dept.map(x=>x.부서), datasets:[{data:d.dept.map(x=>x.건수), backgroundColor:deptColors, borderWidth:1, borderColor:'#fff'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{family:'Noto Sans KR',size:11},boxWidth:12,padding:8}}}}
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'right', labels:{ font:{family:'Noto Sans KR',size:11}, boxWidth:12, padding:8 } },
+        datalabels:{
+          color:'#fff',
+          font:{ weight:'600', size:11 },
+          formatter: (value, ctx) => {
+            const total = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+            const p = total > 0 ? value/total*100 : 0;
+            return p >= 5 ? p.toFixed(1)+'%' : '';
+          }
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
   });
 
   // 부서 셀렉터 초기화
