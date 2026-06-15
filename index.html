@@ -290,6 +290,14 @@
           <div class="chart-wrap h320"><canvas id="chart-reason-pie"></canvas></div>
         </div>
       </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <div class="card-title">사유별 월별 추이</div>
+          <select id="reason-month-select" onchange="renderReasonMonthly()" style="font-size:12px;font-weight:600;color:var(--accent);border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;">
+          </select>
+        </div>
+        <div class="chart-wrap h240"><canvas id="chart-reason-monthly"></canvas></div>
+      </div>
       <div class="card">
         <div class="card-header"><div class="card-title">사유별 상세 목록</div></div>
         <table class="data-table">
@@ -738,7 +746,7 @@ function renderType(fy) {
   charts['reason-bar'] = new Chart(document.getElementById('chart-reason-bar').getContext('2d'), {
     type: 'bar',
     data: { labels: d.reason.map(x=>x.사유), datasets: [{ label:'건수', data: d.reason.map(x=>x.건수), backgroundColor: d.reason.map((_,i)=>PALETTE[i%PALETTE.length]), borderRadius:4 }] },
-    options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#F0F2F5'}},y:{grid:{display:false},ticks:{font:{size:11}}}} }
+    options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#F0F2F5'}, ticks:{stepSize:1}}, y:{grid:{display:false},ticks:{font:{size:11}}}} }
   });
   destroyChart('reason-pie');
   charts['reason-pie'] = new Chart(document.getElementById('chart-reason-pie').getContext('2d'), {
@@ -747,8 +755,59 @@ function renderType(fy) {
     options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right', labels:{font:{family:'Noto Sans KR',size:11},boxWidth:12,padding:8}}} }
   });
 
+  // 사유 셀렉터 초기화
+  const sel = document.getElementById('reason-month-select');
+  sel.innerHTML = d.reason.map(x => `<option value="${x.사유}">${x.사유}</option>`).join('');
+  renderReasonMonthly();
+
   document.getElementById('reason-table-body').innerHTML = d.reason.map((x,i) => `
     <tr><td><span class="rank-num ${i<3?'top':''}">${i+1}</span></td><td>${x.사유}</td><td class="num-cell">${fmt(x.건수)}</td><td class="pct-cell">${pct(x.건수,d.total_rework)}</td></tr>`).join('');
+}
+
+// ── 사유별 월별 추이 차트 ──
+function renderReasonMonthly() {
+  const sel = document.getElementById('reason-month-select');
+  if (!sel || !currentFY) return;
+  const selectedReason = sel.value;
+  const d = COMPUTED[currentFY];
+
+  // 월별 해당 사유 건수 집계 (MONTH_ORDER 순서로)
+  const monthData = MONTH_ORDER.map(mo => {
+    const detail = d._monthly_detail[mo];
+    return detail ? (detail.reason[selectedReason] || 0) : 0;
+  });
+
+  // 색상: 해당 사유의 순위에 맞는 PALETTE 색
+  const reasonIdx = d.reason.findIndex(x => x.사유 === selectedReason);
+  const color = PALETTE[reasonIdx >= 0 ? reasonIdx % PALETTE.length : 0];
+
+  destroyChart('reason-monthly');
+  charts['reason-monthly'] = new Chart(document.getElementById('chart-reason-monthly').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: MONTH_ORDER.map(mo => MONTH_LABEL[mo]),
+      datasets: [{
+        label: selectedReason,
+        data: monthData,
+        backgroundColor: color + 'CC',
+        borderColor: color,
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          grid: { color: '#F0F2F5' },
+          ticks: { stepSize: 1, precision: 0 },
+          beginAtZero: true
+        },
+        x: { grid: { display: false } }
+      }
+    }
+  });
 }
 
 // ── PRODUCT ──
