@@ -304,7 +304,7 @@
       <div class="card">
         <div class="card-header"><div class="card-title">사유별 상세 목록</div></div>
         <table class="data-table">
-          <thead><tr><th>순위</th><th>사유</th><th style="text-align:right">건수</th><th style="text-align:right">비중</th></tr></thead>
+          <thead><tr><th>순위</th><th>사유</th><th>주관부서</th><th>구분</th><th style="text-align:right">건수</th><th style="text-align:right">비중</th><th style="text-align:right">주문건대비</th></tr></thead>
           <tbody id="reason-table-body"></tbody>
         </table>
       </div>
@@ -416,14 +416,15 @@ function parseWorkbook(wb) {
 
   // 필요 컬럼 인덱스
   const C = {
-    partner:  colMap['제휴사명'],
+    partner:   colMap['제휴사명'],
     orderDate: colMap['주문일자'],
-    product:  colMap['상품구분'],
-    cost:     colMap['비용'],
-    dept:     colMap['주관부서'],
-    reason:   colMap['사유'],
-    year:     colMap['년도'],
-    month:    colMap['월'],
+    product:   colMap['상품구분'],
+    cost:      colMap['비용'],
+    dept:      colMap['주관부서'],
+    gubun:     19, // '구분' 컬럼이 두 개라 인덱스 직접 지정 (재작업 공정 구분)
+    reason:    colMap['사유'],
+    year:      colMap['년도'],
+    month:     colMap['월'],
   };
 
   for (let i = hdrIdx + 1; i < rows1.length; i++) {
@@ -449,7 +450,15 @@ function parseWorkbook(wb) {
 
     // 사유
     const reason = (r[C.reason] || '').trim();
-    if (reason) d._reason[reason] = (d._reason[reason] || 0) + 1;
+    if (reason) {
+      d._reason[reason] = (d._reason[reason] || 0) + 1;
+      // 사유별 부서·구분 집계
+      if (!d._reason_detail[reason]) d._reason_detail[reason] = { dept: {}, gubun: {} };
+      const dept2 = (r[C.dept] || '').trim();
+      const gubun = (r[C.gubun] || '').trim();
+      if (dept2) d._reason_detail[reason].dept[dept2] = (d._reason_detail[reason].dept[dept2] || 0) + 1;
+      if (gubun) d._reason_detail[reason].gubun[gubun] = (d._reason_detail[reason].gubun[gubun] || 0) + 1;
+    }
 
     // 주관부서
     const dept = (r[C.dept] || '').trim();
@@ -505,7 +514,7 @@ function parseWorkbook(wb) {
 function initFY(fy) {
   COMPUTED[fy] = {
     total_rework: 0, total_orders: 0, total_cost: 0,
-    _monthly: {}, _reason: {}, _dept: {}, _product: {}, _partner: {},
+    _monthly: {}, _reason: {}, _reason_detail: {}, _dept: {}, _product: {}, _partner: {},
     monthly: [], reason: [], dept: [], product: [], partner: [],
     _monthly_detail: {}
   };
@@ -519,8 +528,13 @@ function finalizeFY(fy) {
     재작업: (d._monthly[mo] || {재작업:0}).재작업,
     주문:   (d._monthly[mo] || {주문:0}).주문,
   }));
-  // 사유 내림차순 TOP10
-  d.reason = Object.entries(d._reason).sort((a,b)=>b[1]-a[1]).map(([사유,건수])=>({사유,건수}));
+  // 사유 내림차순 전체
+  d.reason = Object.entries(d._reason).sort((a,b)=>b[1]-a[1]).map(([사유,건수])=>{
+    const detail = d._reason_detail[사유] || { dept: {}, gubun: {} };
+    const topDept  = Object.entries(detail.dept).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+    const topGubun = Object.entries(detail.gubun).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+    return { 사유, 건수, 주관부서: topDept, 구분: topGubun };
+  });
   // 부서 내림차순
   d.dept = Object.entries(d._dept).sort((a,b)=>b[1]-a[1]).map(([부서,건수])=>({부서,건수}));
   // 상품 내림차순
@@ -764,7 +778,15 @@ function renderType(fy) {
   renderReasonMonthly();
 
   document.getElementById('reason-table-body').innerHTML = d.reason.map((x,i) => `
-    <tr><td><span class="rank-num ${i<3?'top':''}">${i+1}</span></td><td>${x.사유}</td><td class="num-cell">${fmt(x.건수)}</td><td class="pct-cell">${pct(x.건수,d.total_rework)}</td></tr>`).join('');
+    <tr>
+      <td><span class="rank-num ${i<3?'top':''}">${i+1}</span></td>
+      <td>${x.사유}</td>
+      <td style="color:var(--text-secondary)">${x.주관부서}</td>
+      <td style="color:var(--text-secondary)">${x.구분}</td>
+      <td class="num-cell">${fmt(x.건수)}</td>
+      <td class="pct-cell">${pct(x.건수, d.total_rework)}</td>
+      <td class="pct-cell">${pct(x.건수, d.total_orders)}</td>
+    </tr>`).join('');
 }
 
 // ── 사유별 월별 추이 차트 ──
