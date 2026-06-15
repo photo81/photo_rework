@@ -328,6 +328,19 @@
           <div class="chart-wrap h300"><canvas id="chart-product-pie"></canvas></div>
         </div>
       </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <div class="card-title">상품별 월별 추이</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="prod-month-prod-select" onchange="renderProductMonthly()" style="font-size:12px;font-weight:600;color:#111827;border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;"></select>
+            <select id="prod-month-reason-select" onchange="renderProductMonthly()" style="font-size:12px;font-weight:600;color:#111827;border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;"></select>
+          </div>
+        </div>
+        <div class="chart-wrap h240"><canvas id="chart-product-monthly"></canvas></div>
+        <div style="margin-top:10px;font-size:11.5px;color:var(--text-muted);text-align:right;">
+          💡 상품과 재작업 유형을 선택하면 월별 추이를 조회할 수 있습니다. 유형 미선택 시 전체 집계
+        </div>
+      </div>
       <div class="card">
         <div class="card-header"><div class="card-title">상품별 상세</div></div>
         <table class="data-table">
@@ -466,7 +479,16 @@ function parseWorkbook(wb) {
 
     // 상품구분
     const prod = (r[C.product] || '').trim();
-    if (prod) d._product[prod] = (d._product[prod] || 0) + 1;
+    if (prod) {
+      d._product[prod] = (d._product[prod] || 0) + 1;
+      // 상품별 월별 사유 집계
+      if (!d._product_monthly[prod]) d._product_monthly[prod] = {};
+      if (!d._product_monthly[prod][mo]) d._product_monthly[prod][mo] = { '__전체': 0 };
+      d._product_monthly[prod][mo]['__전체']++;
+      if (reason) {
+        d._product_monthly[prod][mo][reason] = (d._product_monthly[prod][mo][reason] || 0) + 1;
+      }
+    }
 
     // 제휴사
     const partner = (r[C.partner] || '').trim();
@@ -516,7 +538,7 @@ function initFY(fy) {
     total_rework: 0, total_orders: 0, total_cost: 0,
     _monthly: {}, _reason: {}, _reason_detail: {}, _dept: {}, _product: {}, _partner: {},
     monthly: [], reason: [], dept: [], product: [], partner: [],
-    _monthly_detail: {}
+    _monthly_detail: {}, _product_monthly: {}  // _product_monthly[상품][월][사유] = 건수
   };
 }
 
@@ -890,8 +912,109 @@ function renderProduct(fy) {
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{family:'Noto Sans KR',size:11},boxWidth:12}}}}
   });
 
+  // 상품 셀렉터 초기화
+  const prodSel = document.getElementById('prod-month-prod-select');
+  prodSel.innerHTML = d.product.map(x => `<option value="${x.상품}">${x.상품}</option>`).join('');
+
+  // 재작업유형 셀렉터 초기화 (선택된 상품의 사유 목록)
+  const reasonSel = document.getElementById('prod-month-reason-select');
+  const firstProd = d.product[0]?.상품 || '';
+  const reasons = firstProd ? Object.keys(
+    Object.values(d._product_monthly[firstProd] || {}).reduce((acc, moData) => {
+      Object.keys(moData).forEach(k => { if (k !== '__전체') acc[k] = 1; });
+      return acc;
+    }, {})
+  ) : [];
+  reasonSel.innerHTML = `<option value="__전체">전체</option>` +
+    reasons.map(r => `<option value="${r}">${r}</option>`).join('');
+
+  renderProductMonthly();
+
   document.getElementById('product-table-body').innerHTML = d.product.map((x,i) => `
     <tr><td><span class="rank-num ${i<3?'top':''}">${i+1}</span></td><td>${x.상품}</td><td class="num-cell">${fmt(x.건수)}</td><td class="pct-cell">${pct(x.건수,d.total_rework)}</td></tr>`).join('');
+}
+
+// ── 상품별 월별 추이 차트 ──
+function renderProductMonthly() {
+  const prodSel   = document.getElementById('prod-month-prod-select');
+  const reasonSel = document.getElementById('prod-month-reason-select');
+  if (!prodSel || !currentFY) return;
+
+  const selectedProd   = prodSel.value;
+  const selectedReason = reasonSel.value; // '__전체' or 사유명
+  const d    = COMPUTED[currentFY];
+  const prevFY = String(Number(currentFY) - 1);
+  const prev = COMPUTED[prevFY] || null;
+
+  // 상품 선택 시 해당 상품의 사유 목록으로 유형 셀렉터 갱신
+  const prodMonthly = d._product_monthly[selectedProd] || {};
+  const allReasons = Object.keys(
+    Object.values(prodMonthly).reduce((acc, moData) => {
+      Object.keys(moData).forEach(k => { if (k !== '__전체') acc[k] = 1; });
+      return acc;
+    }, {})
+  );
+  const curReasonVal = reasonSel.value;
+  reasonSel.innerHTML = `<option value="__전체">전체</option>` +
+    allReasons.map(r => `<option value="${r}" ${r === curReasonVal ? 'selected' : ''}>${r}</option>`).join('');
+
+  // 색상: 상품 순위 기준
+  const prodIdx = d.product.findIndex(x => x.상품 === selectedProd);
+  const color = PALETTE[prodIdx >= 0 ? prodIdx % PALETTE.length : 0];
+
+  // 월별 데이터 추출 함수
+  const getMonthData = (pmData) => MONTH_ORDER.map(mo => {
+    const moData = (pmData || {})[mo] || {};
+    return selectedReason === '__전체' ? (moData['__전체'] || 0) : (moData[selectedReason] || 0);
+  });
+
+  const curData  = getMonthData(d._product_monthly[selectedProd]);
+  const prevData = prev ? getMonthData(prev._product_monthly[selectedProd]) : [];
+
+  const datasets = [{
+    label: `FY${currentFY}`,
+    data: curData,
+    backgroundColor: color + 'CC',
+    borderColor: color,
+    borderWidth: 1,
+    borderRadius: 4,
+  }];
+  if (prev) {
+    datasets.push({
+      label: `FY${prevFY} (전년)`,
+      data: prevData,
+      backgroundColor: '#9CA3AF44',
+      borderColor: '#9CA3AF',
+      borderWidth: 1,
+      borderRadius: 4,
+    });
+  }
+
+  destroyChart('product-monthly');
+  charts['product-monthly'] = new Chart(document.getElementById('chart-product-monthly').getContext('2d'), {
+    type: 'bar',
+    data: { labels: MONTH_ORDER.map(mo => MONTH_LABEL[mo]), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index' },
+      plugins: {
+        legend: {
+          display: !!prev,
+          position: 'top',
+          labels: { font: { family: 'Noto Sans KR', size: 11 }, boxWidth: 12 }
+        }
+      },
+      scales: {
+        y: { grid: { color: '#F0F2F5' }, ticks: { stepSize: 1, precision: 0 }, beginAtZero: true },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+// 상품 선택 변경 시 유형 목록도 갱신
+function onProdSelectChange() {
+  renderProductMonthly();
 }
 
 // ── DEPT ──
