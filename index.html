@@ -193,6 +193,7 @@
     <div class="nav-item" data-section="type" onclick="navigate(this)"><span class="nav-icon">🔍</span> 유형별 통계</div>
     <div class="nav-item" data-section="product" onclick="navigate(this)"><span class="nav-icon">📦</span> 상품별 통계</div>
     <div class="nav-item" data-section="dept" onclick="navigate(this)"><span class="nav-icon">🏭</span> 주관부서별 통계</div>
+    <div class="nav-item" data-section="brand" onclick="navigate(this)"><span class="nav-icon">🤝</span> 제휴사별 통계</div>
   </nav>
   <div class="sidebar-footer">
     <div id="sidebar-updated">데이터 로딩 중...</div>
@@ -391,6 +392,46 @@
       </div>
     </div>
 
+    <!-- BRAND -->
+    <div class="section" id="section-brand">
+      <div class="kpi-grid">
+        <div class="kpi-card highlight"><div class="kpi-label">총 재작업 건수</div><div class="kpi-value" id="brand-kpi-total">—</div><div class="kpi-sub">건</div></div>
+        <div class="kpi-card"><div class="kpi-label">최다 제휴사</div><div class="kpi-value" style="font-size:18px" id="brand-kpi-top1">—</div><div class="kpi-sub" id="brand-kpi-top1-cnt"></div></div>
+        <div class="kpi-card"><div class="kpi-label">2위 제휴사</div><div class="kpi-value" style="font-size:18px" id="brand-kpi-top2">—</div><div class="kpi-sub" id="brand-kpi-top2-cnt"></div></div>
+        <div class="kpi-card"><div class="kpi-label">3위 제휴사</div><div class="kpi-value" style="font-size:18px" id="brand-kpi-top3">—</div><div class="kpi-sub" id="brand-kpi-top3-cnt"></div></div>
+      </div>
+      <div class="chart-grid-2">
+        <div class="card">
+          <div class="card-header"><div class="card-title">제휴사별 재작업 건수</div><div class="card-badge" id="brand-fy-badge">—</div></div>
+          <div class="chart-wrap h300"><canvas id="chart-brand-bar"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">제휴사별 비중</div></div>
+          <div class="chart-wrap h300"><canvas id="chart-brand-pie"></canvas></div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <div class="card-title">제휴사별 월별 추이</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="brand-month-brand-select" onchange="renderBrandMonthly()" style="font-size:12px;font-weight:600;color:#111827;border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;"></select>
+            <select id="brand-month-reason-select" onchange="renderBrandMonthly()" style="font-size:12px;font-weight:600;color:#111827;border:1px solid var(--border);border-radius:6px;padding:4px 10px;background:var(--surface2);cursor:pointer;outline:none;font-family:inherit;"></select>
+          </div>
+        </div>
+        <div class="chart-wrap h240"><canvas id="chart-brand-monthly"></canvas></div>
+        <div style="margin-top:10px;font-size:11.5px;color:var(--text-muted);text-align:right;">
+          💡 제휴사와 재작업 유형을 선택하면 월별 추이를 조회할 수 있습니다. 유형 미선택 시 전체 집계
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">제휴사별 상세</div></div>
+        <table class="data-table">
+          <thead><tr><th>순위</th><th>제휴사</th><th style="text-align:right">건수</th><th style="text-align:right">비중</th></tr></thead>
+          <tbody id="brand-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -513,7 +554,14 @@ function parseWorkbook(wb) {
 
     // 제휴사
     const partner = (r[C.partner] || '').trim();
-    if (partner) d._partner[partner] = (d._partner[partner] || 0) + 1;
+    if (partner) {
+      d._partner[partner] = (d._partner[partner] || 0) + 1;
+      // 제휴사별 월별 사유 집계
+      if (!d._partner_monthly[partner]) d._partner_monthly[partner] = {};
+      if (!d._partner_monthly[partner][mo]) d._partner_monthly[partner][mo] = { '__전체': 0 };
+      d._partner_monthly[partner][mo]['__전체']++;
+      if (reason) d._partner_monthly[partner][mo][reason] = (d._partner_monthly[partner][mo][reason] || 0) + 1;
+    }
 
     // 월별 상세 (사유 + 제휴사)
     if (!d._monthly_detail[mo]) d._monthly_detail[mo] = { reason: {}, partner: {} };
@@ -559,7 +607,7 @@ function initFY(fy) {
     total_rework: 0, total_orders: 0, total_cost: 0,
     _monthly: {}, _reason: {}, _reason_detail: {}, _dept: {}, _product: {}, _partner: {},
     monthly: [], reason: [], dept: [], product: [], partner: [],
-    _monthly_detail: {}, _product_monthly: {}, _dept_monthly: {}  // _dept_monthly[부서][월][사유] = 건수
+    _monthly_detail: {}, _product_monthly: {}, _dept_monthly: {}, _partner_monthly: {}  // [제휴사][월][사유]
   };
 }
 
@@ -686,7 +734,7 @@ function navigate(el) {
   currentSection = el.dataset.section;
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + currentSection).classList.add('active');
-  const titles = { overview:'전체 현황', type:'유형별 통계', product:'상품별 통계', dept:'주관부서별 통계' };
+  const titles = { overview:'전체 현황', type:'유형별 통계', product:'상품별 통계', dept:'주관부서별 통계', brand:'제휴사별 통계' };
   document.getElementById('page-title').textContent = titles[currentSection];
   if (currentFY) renderSection(currentSection, currentFY);
 }
@@ -702,6 +750,7 @@ function renderSection(section, fy) {
   else if (section === 'type')    renderType(fy);
   else if (section === 'product') renderProduct(fy);
   else if (section === 'dept')    renderDept(fy);
+  else if (section === 'brand')   renderBrand(fy);
 }
 
 // ── OVERVIEW ──
@@ -1175,6 +1224,152 @@ function renderDeptMonthly() {
 
   destroyChart('dept-monthly');
   charts['dept-monthly'] = new Chart(document.getElementById('chart-dept-monthly').getContext('2d'), {
+    type: 'bar',
+    data: { labels: MONTH_ORDER.map(mo => MONTH_LABEL[mo]), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index' },
+      plugins: {
+        legend: {
+          display: !!prev,
+          position: 'top',
+          labels: { font: { family: 'Noto Sans KR', size: 11 }, boxWidth: 12 }
+        }
+      },
+      scales: {
+        y: { grid: { color: '#F0F2F5' }, ticks: { stepSize: 1, precision: 0 }, beginAtZero: true },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+// ── BRAND ──
+function renderBrand(fy) {
+  const d = COMPUTED[fy];
+  document.getElementById('brand-fy-badge').textContent = `FY${fy}`;
+  document.getElementById('brand-kpi-total').textContent = fmt(d.total_rework);
+  [1,2,3].forEach(n => {
+    const b = d.partner[n-1];
+    document.getElementById(`brand-kpi-top${n}`).textContent = b ? b.제휴사 : '—';
+    document.getElementById(`brand-kpi-top${n}-cnt`).textContent = b ? fmt(b.건수)+'건' : '';
+  });
+
+  const brandColors = d.partner.map((_,i) => PALETTE[i % PALETTE.length]);
+
+  destroyChart('brand-bar');
+  charts['brand-bar'] = new Chart(document.getElementById('chart-brand-bar').getContext('2d'), {
+    type: 'bar',
+    data: { labels: d.partner.map(x=>x.제휴사), datasets: [{ label:'건수', data: d.partner.map(x=>x.건수), backgroundColor: brandColors, borderRadius:4 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{grid:{color:'#F0F2F5'}},x:{grid:{display:false}}} }
+  });
+
+  destroyChart('brand-pie');
+  charts['brand-pie'] = new Chart(document.getElementById('chart-brand-pie').getContext('2d'), {
+    type: 'doughnut',
+    data: { labels: d.partner.map(x=>x.제휴사), datasets: [{ data: d.partner.map(x=>x.건수), backgroundColor: brandColors, borderWidth:1, borderColor:'#fff' }] },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'right', labels:{ font:{family:'Noto Sans KR',size:11}, boxWidth:12, padding:8 } },
+        datalabels:{
+          color:'#fff',
+          font:{ weight:'600', size:11 },
+          formatter: (value, ctx) => {
+            const total = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+            const p = total > 0 ? value/total*100 : 0;
+            return p >= 5 ? p.toFixed(1)+'%' : '';
+          }
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
+  });
+
+  // 제휴사 셀렉터 초기화
+  const brandSel = document.getElementById('brand-month-brand-select');
+  brandSel.innerHTML = d.partner.map(x => `<option value="${x.제휴사}">${x.제휴사}</option>`).join('');
+
+  // 재작업유형 셀렉터 초기화
+  const brandReasonSel = document.getElementById('brand-month-reason-select');
+  const firstBrand = d.partner[0]?.제휴사 || '';
+  const brandReasons = firstBrand ? Object.keys(
+    Object.values(d._partner_monthly[firstBrand] || {}).reduce((acc, moData) => {
+      Object.keys(moData).forEach(k => { if (k !== '__전체') acc[k] = 1; });
+      return acc;
+    }, {})
+  ) : [];
+  brandReasonSel.innerHTML = `<option value="__전체">전체</option>` +
+    brandReasons.map(r => `<option value="${r}">${r}</option>`).join('');
+
+  renderBrandMonthly();
+
+  document.getElementById('brand-table-body').innerHTML = d.partner.map((x,i) => `
+    <tr>
+      <td><span class="rank-num ${i<3?'top':''}">${i+1}</span></td>
+      <td>${x.제휴사}</td>
+      <td class="num-cell">${fmt(x.건수)}</td>
+      <td class="pct-cell">${pct(x.건수, d.total_rework)}</td>
+    </tr>`).join('');
+}
+
+// ── 제휴사별 월별 추이 차트 ──
+function renderBrandMonthly() {
+  const brandSel  = document.getElementById('brand-month-brand-select');
+  const reasonSel = document.getElementById('brand-month-reason-select');
+  if (!brandSel || !currentFY) return;
+
+  const selectedBrand  = brandSel.value;
+  const selectedReason = reasonSel.value;
+  const d      = COMPUTED[currentFY];
+  const prevFY = String(Number(currentFY) - 1);
+  const prev   = COMPUTED[prevFY] || null;
+
+  // 제휴사 선택 시 해당 제휴사의 사유 목록으로 갱신
+  const brandMonthly = d._partner_monthly[selectedBrand] || {};
+  const allReasons = Object.keys(
+    Object.values(brandMonthly).reduce((acc, moData) => {
+      Object.keys(moData).forEach(k => { if (k !== '__전체') acc[k] = 1; });
+      return acc;
+    }, {})
+  );
+  const curReasonVal = reasonSel.value;
+  reasonSel.innerHTML = `<option value="__전체">전체</option>` +
+    allReasons.map(r => `<option value="${r}" ${r === curReasonVal ? 'selected' : ''}>${r}</option>`).join('');
+
+  // 색상: 제휴사 순위 기준
+  const brandIdx = d.partner.findIndex(x => x.제휴사 === selectedBrand);
+  const color = PALETTE[brandIdx >= 0 ? brandIdx % PALETTE.length : 0];
+
+  const getMonthData = (pmData) => MONTH_ORDER.map(mo => {
+    const moData = (pmData || {})[mo] || {};
+    return selectedReason === '__전체' ? (moData['__전체'] || 0) : (moData[selectedReason] || 0);
+  });
+
+  const curData  = getMonthData(d._partner_monthly[selectedBrand]);
+  const prevData = prev ? getMonthData(prev._partner_monthly[selectedBrand]) : [];
+
+  const datasets = [{
+    label: `FY${currentFY}`,
+    data: curData,
+    backgroundColor: color + 'CC',
+    borderColor: color,
+    borderWidth: 1,
+    borderRadius: 4,
+  }];
+  if (prev) {
+    datasets.push({
+      label: `FY${prevFY} (전년)`,
+      data: prevData,
+      backgroundColor: '#9CA3AF44',
+      borderColor: '#9CA3AF',
+      borderWidth: 1,
+      borderRadius: 4,
+    });
+  }
+
+  destroyChart('brand-monthly');
+  charts['brand-monthly'] = new Chart(document.getElementById('chart-brand-monthly').getContext('2d'), {
     type: 'bar',
     data: { labels: MONTH_ORDER.map(mo => MONTH_LABEL[mo]), datasets },
     options: {
