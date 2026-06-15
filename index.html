@@ -56,6 +56,13 @@
   .kpi-sub { font-size: 12px; color: var(--text-muted); }
   .kpi-card.highlight { background: var(--accent); border-color: var(--accent); }
   .kpi-card.highlight .kpi-label, .kpi-card.highlight .kpi-value, .kpi-card.highlight .kpi-sub { color: white; }
+  .kpi-value-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .kpi-value-row .kpi-value { margin-bottom: 0; }
+  .kpi-yoy { font-size: 12px; font-weight: 500; white-space: nowrap; opacity: 0.75; }
+  .kpi-yoy.up   { color: var(--danger); }
+  .kpi-yoy.down { color: var(--ok); }
+  .kpi-yoy.flat { color: var(--text-muted); }
+  .kpi-card.highlight .kpi-yoy { color: rgba(255,255,255,0.7); }
 
   /* CHARTS */
   .chart-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
@@ -212,22 +219,34 @@
       <div class="kpi-grid">
         <div class="kpi-card highlight">
           <div class="kpi-label">총 재작업 건수</div>
-          <div class="kpi-value" id="kpi-total">—</div>
+          <div class="kpi-value-row">
+            <div class="kpi-value" id="kpi-total">—</div>
+            <div class="kpi-yoy" id="kpi-total-yoy"></div>
+          </div>
           <div class="kpi-sub">건</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">총 주문 건수</div>
-          <div class="kpi-value" id="kpi-orders">—</div>
+          <div class="kpi-value-row">
+            <div class="kpi-value" id="kpi-orders">—</div>
+            <div class="kpi-yoy" id="kpi-orders-yoy"></div>
+          </div>
           <div class="kpi-sub">건</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">재작업률</div>
-          <div class="kpi-value" id="kpi-rate">—</div>
+          <div class="kpi-value-row">
+            <div class="kpi-value" id="kpi-rate">—</div>
+            <div class="kpi-yoy" id="kpi-rate-yoy"></div>
+          </div>
           <div class="kpi-sub">주문 대비</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">재작업 비용 합계</div>
-          <div class="kpi-value" id="kpi-cost">—</div>
+          <div class="kpi-value-row">
+            <div class="kpi-value" id="kpi-cost">—</div>
+            <div class="kpi-yoy" id="kpi-cost-yoy"></div>
+          </div>
           <div class="kpi-sub">원</div>
         </div>
       </div>
@@ -617,12 +636,44 @@ function renderSection(section, fy) {
 // ── OVERVIEW ──
 function renderOverview(fy) {
   const d = COMPUTED[fy];
+  const prevFY = String(Number(fy) - 1);
+  const prev = COMPUTED[prevFY] || null;
+
+  // 전년대비 뱃지 생성 함수
+  // isLowerBetter: 재작업건수/률/비용은 낮을수록 좋음(↓green), 주문건수는 높을수록 좋음(↑green)
+  function yoyBadge(cur, prevVal, isLowerBetter) {
+    if (!prev || !prevVal || prevVal === 0) return { text: '', cls: 'flat' };
+    const diff = ((cur - prevVal) / prevVal * 100);
+    const sign = diff > 0 ? '+' : '';
+    const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
+    const cls = diff === 0 ? 'flat' : (diff > 0 === !isLowerBetter) ? 'down' : 'up';
+    return { text: `${arrow} ${sign}${diff.toFixed(1)}%`, cls };
+  }
+
+  function setYoy(id, cur, prevVal, isLowerBetter) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const { text, cls } = yoyBadge(cur, prevVal, isLowerBetter);
+    el.textContent = text ? `전년比 ${text}` : prev ? '전년 데이터 없음' : '';
+    el.className = `kpi-yoy ${cls}`;
+  }
+
+  // 현재 FY 수치
+  const curRate = d.total_orders > 0 ? d.total_rework / d.total_orders * 100 : 0;
+  const prevRate = prev && prev.total_orders > 0 ? prev.total_rework / prev.total_orders * 100 : 0;
+
   document.getElementById('ov-fy-badge').textContent = `FY${fy}`;
   document.getElementById('kpi-total').textContent = fmt(d.total_rework);
+  setYoy('kpi-total-yoy', d.total_rework, prev?.total_rework, true);
+
   document.getElementById('kpi-orders').textContent = d.total_orders > 0 ? fmt(d.total_orders) : '미집계';
-  const rate = d.total_orders > 0 ? (d.total_rework / d.total_orders * 100).toFixed(2) + '%' : '—';
-  document.getElementById('kpi-rate').textContent = rate;
+  setYoy('kpi-orders-yoy', d.total_orders, prev?.total_orders, false);
+
+  document.getElementById('kpi-rate').textContent = d.total_orders > 0 ? curRate.toFixed(2) + '%' : '—';
+  setYoy('kpi-rate-yoy', curRate, prevRate, true);
+
   document.getElementById('kpi-cost').textContent = d.total_cost > 0 ? fmt(d.total_cost) : '미집계';
+  setYoy('kpi-cost-yoy', d.total_cost, prev?.total_cost, true);
 
   destroyChart('monthly');
   charts['monthly'] = new Chart(document.getElementById('chart-monthly').getContext('2d'), {
